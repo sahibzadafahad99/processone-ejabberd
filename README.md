@@ -1,1 +1,1 @@
-# processone-ejabberd
+README
