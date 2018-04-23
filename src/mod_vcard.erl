@@ -38,7 +38,7 @@
 	 remove_user/2, export/1, import_info/0, import/5, import_start/2,
 	 depends/2, process_search/1, process_vcard/1, get_vcard/2,
 	 disco_items/5, disco_features/5, disco_identity/5,
-	 vcard_iq_set/1, mod_opt_type/1, set_vcard/3, make_vcard_search/4]).
+	 vcard_iq_set/1, mod_opt_type/1, set_vcard/3, make_vcard_search/4,decode_iq_subel/1]).
 -export([init/1, handle_call/3, handle_cast/2,
 	 handle_info/2, terminate/2, code_change/3]).
 
@@ -562,3 +562,17 @@ mod_options(Host) ->
      {cache_size, ejabberd_config:cache_size(Host)},
      {cache_missed, ejabberd_config:cache_missed(Host)},
      {cache_life_time, ejabberd_config:cache_life_time(Host)}].
+
+%%%===================================================================
+%%% Whizpool 29 March, 2018 :: Naeem 
+%%% As we are using custom fields so we have to pass the check for iq 
+%%% otherwise XMPP will not store any data
+%%%===================================================================		
+
+-spec decode_iq_subel(xmpp_element() | xmlel()) -> xmpp_element() | xmlel().
+%% Tell gen_iq_handler not to decode vcard elements
+decode_iq_subel(El) ->
+    case xmpp:get_ns(El) of
+	?NS_VCARD -> xmpp:encode(El);
+	_ -> xmpp:decode(El)
+    end.

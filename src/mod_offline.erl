@@ -838,6 +838,7 @@ import(LServer, {sql, _}, DBType, <<"spool">>,
 mod_opt_type(access_max_user_messages) ->
     fun acl:shaper_rules_validator/1;
 mod_opt_type(db_type) -> fun(T) -> ejabberd_config:v_db(?MODULE, T) end;
+mod_opt_type(push_url) -> fun(T) -> T end;
 mod_opt_type(store_empty_body) ->
     fun (V) when is_boolean(V) -> V;
         (unless_chat_state) -> unless_chat_state
@@ -846,4 +847,5 @@ mod_opt_type(store_empty_body) ->
 mod_options(Host) ->
     [{db_type, ejabberd_config:default_db(Host, ?MODULE)},
      {access_max_user_messages, max_user_offline_messages},
+     {push_url, <<"">>},
      {store_empty_body, unless_chat_state}].

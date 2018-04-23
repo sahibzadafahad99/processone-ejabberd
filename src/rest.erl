@@ -28,7 +28,7 @@
 -behaviour(ejabberd_config).
 
 -export([start/1, stop/1, get/2, get/3, post/4, delete/2,
-         put/4, patch/4, request/6, with_retry/4, opt_type/1]).
+	 put/4, patch/4, request/6, with_retry/4, opt_type/1]).
 
 -include("logger.hrl").
 
@@ -124,16 +124,16 @@ request(Server, Method, Path, Params, Mime, Data) ->
             End = os:timestamp(),
             Elapsed = timer:now_diff(End, Begin) div 1000, %% time in ms
             ejabberd_hooks:run(backend_api_response_time, Server,
-                               [Server, Method, Path, Elapsed]);
+			       [Server, Method, Path, Elapsed]);
         {error, {http_error,{error,timeout}}} ->
             ejabberd_hooks:run(backend_api_timeout, Server,
-                               [Server, Method, Path]);
+			       [Server, Method, Path]);
         {error, {http_error,{error,connect_timeout}}} ->
             ejabberd_hooks:run(backend_api_timeout, Server,
-                               [Server, Method, Path]);
+			       [Server, Method, Path]);
         {error, _} ->
             ejabberd_hooks:run(backend_api_error, Server,
-                               [Server, Method, Path])
+			       [Server, Method, Path])
     end,
     Result.
 
@@ -154,46 +154,32 @@ encode_json(Content) ->
     end.
 
 base_url(Server, Path) ->
-    BPath = case iolist_to_binary(Path) of
+    Tail = case iolist_to_binary(Path) of
         <<$/, Ok/binary>> -> Ok;
         Ok -> Ok
     end,
-    Url = case BPath of
-        <<"http", _/binary>> -> BPath;
+    case Tail of
+        <<"http", _Url/binary>> -> Tail;
         _ ->
             Base = ejabberd_config:get_option({ext_api_url, Server},
                                               <<"http://localhost/api">>),
-            case binary:last(Base) of
-                47 -> <<Base/binary, BPath/binary>>;
-                _ -> <<Base/binary, "/", BPath/binary>>
-            end
-    end,
-    case binary:last(Url) of
-        47 -> binary_part(Url, 0, size(Url)-1);
-        _ -> Url
+            <<Base/binary, "/", Tail/binary>>
     end.
 
-url(Url, []) ->
-    binary_to_list(Url);
-url(Url, Params) ->
-    L = [<<"&", (iolist_to_binary(Key))/binary, "=",
-          (misc:url_encode(Value))/binary>>
-            || {Key, Value} <- Params],
-    <<$&, Encoded/binary>> = iolist_to_binary(L),
-    binary_to_list(<<Url/binary, $?, Encoded/binary>>).
+url(Server, Path, []) ->
+    binary_to_list(base_url(Server, Path));
 url(Server, Path, Params) ->
-    case binary:split(base_url(Server, Path), <<"?">>) of
-        [Url] ->
-            url(Url, Params);
-        [Url, Extra] ->
-            Custom = [list_to_tuple(binary:split(P, <<"=">>))
-                      || P <- binary:split(Extra, <<"&">>, [global])],
-            url(Url, Custom++Params)
-    end.
+    Base = base_url(Server, Path),
+    [<<$&, ParHead/binary>> | ParTail] =
+        [<<"&", (iolist_to_binary(Key))/binary, "=",
+	  (ejabberd_http:url_encode(Value))/binary>>
+            || {Key, Value} <- Params],
+    Tail = iolist_to_binary([ParHead | ParTail]),
+    binary_to_list(<<Base/binary, $?, Tail/binary>>).
 
 -spec opt_type(ext_api_http_pool_size) -> fun((pos_integer()) -> pos_integer());
-              (ext_api_url) -> fun((binary()) -> binary());
-              (atom()) -> [atom()].
+	      (ext_api_url) -> fun((binary()) -> binary());
+	      (atom()) -> [atom()].
 opt_type(ext_api_http_pool_size) ->
     fun (X) when is_integer(X), X > 0 -> X end;
 opt_type(ext_api_url) ->

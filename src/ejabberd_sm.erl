@@ -191,16 +191,23 @@ check_in_subscription(Acc, #presence{to = To}) ->
       true -> Acc;
       false -> {stop, false}
     end.
+%%%===================================================================
+%% 11 Nov 2017: Based on Sir Zeeshan Instructions 
+%% This function returns "user session not found" error in case of composing or paused stanza
+%% To avoid this error we have comment out this function
+%% As we can't check user presence every time so it may cause this issue 
+%% As Discussion with Sir Zeeshan we have comment this function completely.
+%%%===================================================================
 
--spec bounce_offline_message({bounce, message()} | any()) -> any().
+%%-spec bounce_offline_message({bounce, message()} | any()) -> any()
+%%bounce_offline_message({bounce, #message{type = T} = Packet} = Acc)	
+%%    when T == chat; T == groupchat; T == normal ->
+%%    Lang = xmpp:get_lang(Packet),
+%%    Txt = <<"User session not found--1">>,
+%%    Err = xmpp:err_service_unavailable(Txt, Lang),
+%%	ejabberd_router:route_error(Packet, Err)
+%%    {stop, Acc};
 
-bounce_offline_message({bounce, #message{type = T} = Packet} = Acc)
-    when T == chat; T == groupchat; T == normal ->
-    Lang = xmpp:get_lang(Packet),
-    Txt = <<"User session not found">>,
-    Err = xmpp:err_service_unavailable(Txt, Lang),
-    ejabberd_router:route_error(Packet, Err),
-    {stop, Acc};
 bounce_offline_message(Acc) ->
     Acc.
 
@@ -574,9 +581,16 @@ get_sessions(Mod, LUser, LServer) ->
     end.
 
 -spec get_sessions(module(), binary(), binary(), binary()) -> [#session{}].
-get_sessions(Mod, LUser, LServer, LResource) ->
+get_sessions(Mod, LUser, LServer, _LResource) ->
     Sessions = get_sessions(Mod, LUser, LServer),
-    [S || S <- Sessions, element(3, S#session.usr) == LResource].
+	%%%===================================================================
+	%% This section has been modify specially for voice call
+	%% [S || S <- Sessions, element(3, S#session.usr) == LResource],
+	%% We disable the check as we disable the user presence and roster. 
+	%% we need resource id of the clients so rather then comparing with LResource we assume its true.
+	%% Simple return the resource is correct.
+	%%%===================================================================    
+    [S || S <- Sessions, element(3, S#session.usr) == element(3, S#session.usr)].
 
 -spec delete_session(module(), #session{}) -> ok.
 delete_session(Mod, #session{usr = {LUser, LServer, _}} = Session) ->
@@ -682,10 +696,31 @@ do_route(Packet) ->
 		    ?DEBUG("dropping presence to unavailable resource:~n~s",
 			   [xmpp:pp(Packet)]);
 		_ ->
-		    Lang = xmpp:get_lang(Packet),
-		    ErrTxt = <<"User session not found">>,
-		    Err = xmpp:err_service_unavailable(ErrTxt, Lang),
-		    ejabberd_router:route_error(Packet, Err)
+			
+			%%%===================================================================
+			%% This section has been modify specially for voice call
+			%% If the resource is "LynkVoiceCall" and receiver is offline
+			%% We don't want to send user session terminate message.
+			%%%===================================================================   
+			Lang = xmpp:get_lang(Packet),
+		    if LResource == <<"LynkVoiceCall">>  ->
+				From = xmpp:get_from(Packet),
+				ReceiverID = To#jid.luser,		
+				SenderID = list_to_binary(binary_to_list(From#jid.luser)++"@"++binary_to_list(From#jid.lserver)),
+				Jingle = list_to_binary(binary_to_list(fxml:element_to_binary(fxml:get_subtag(xmpp:encode(Packet), <<"jingle">>)))),
+				TS = p1_time_compat:system_time(micro_seconds),
+				TimeStamp = list_to_binary(integer_to_list(TS)),
+				TSinteger = trunc(p1_time_compat:system_time(micro_seconds)) div 1000 ,
+				%%MsgID = list_to_binary("9200000000_"++integer_to_list(TSinteger)),
+				MetaData = list_to_binary("<data message_type='missedcall' send_date='"++integer_to_list(TSinteger)++"'></data>"),
+				%%ejabberd_ndb:store_offline_message(SenderID,ReceiverID, <<"Missed Call">>, MetaData, <<"chat">>, MsgID, TS);
+				ejabberd_ndb:send_voice_push_message(SenderID, ReceiverID, <<"Missed Call">>, <<"chat">>, MetaData,LServer,TimeStamp, Jingle);				
+  		    true->			
+		    	ErrTxt = <<"User session not found">>,
+		    	Err = xmpp:err_service_unavailable(ErrTxt, Lang),
+		    	ejabberd_router:route_error(Packet, Err)
+		    end		
+		   
 	    end;
 	Ss ->
 	    Session = lists:max(Ss),

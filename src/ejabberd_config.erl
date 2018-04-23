@@ -455,7 +455,8 @@ get_config_lines2(Fd, Data, CurrLine, [NextWanted | LNumbers], R) when is_list(D
 exit_or_halt(ExitText) ->
     case [Vsn || {ejabberd, _Desc, Vsn} <- application:which_applications()] of
 	[] ->
-	    ejabberd:halt();
+	    timer:sleep(1000),
+	    halt(string:substr(ExitText, 1, 199));
 	[_] ->
 	    exit(ExitText)
     end.

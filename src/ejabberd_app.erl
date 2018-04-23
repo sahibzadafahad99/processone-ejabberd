@@ -62,7 +62,8 @@ start(normal, _Args) ->
 	    {ok, SupPid};
 	Err ->
 	    ?CRITICAL_MSG("Failed to start ejabberd application: ~p", [Err]),
-	    ejabberd:halt()
+	    timer:sleep(1000),
+	    halt("Refer to ejabberd log files to diagnose the problem")
     end;
 start(_, _) ->
     {error, badarg}.

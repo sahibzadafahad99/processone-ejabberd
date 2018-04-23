@@ -70,7 +70,7 @@
 	 srg_get_members/2, srg_user_add/4, srg_user_del/4,
 
 	 % Send message
-	 send_message/5, send_stanza/3, send_stanza_c2s/4,
+	 send_message/5, send_stanza/3, send_stanza_c2s/4,send_stanza_delete_offline/5,send_iq/5,
 
 	 % Privacy list
 	 privacy_set/3,
@@ -86,6 +86,17 @@
 -include("mod_privacy.hrl").
 -include("ejabberd_sm.hrl").
 -include("xmpp.hrl").
+
+
+
+%%%===================================================================
+%%% erlCass Include Files 
+%%%===================================================================		
+
+-include("erlcass_ndb.hrl").
+-include("erlcass.hrl").
+
+
 
 %%%
 %%% gen_mod
@@ -725,6 +736,15 @@ get_commands_spec() ->
 				<<"<message to='user1@localhost'><ext attr='value'/></message>">>],
 			args_desc = ["Username", "Server name", "Resource", "Stanza"],
 			result = {res, rescode}},
+	 #ejabberd_commands{name = send_iq, tags = [stanza],
+			desc = "Send a stanza; provide From JID and valid To JID",
+			module = ?MODULE, function = send_iq,
+			args = [{from, binary}, {to, binary}, {stanza, binary}, {type, binary}, {id, binary}],
+			args_example = [<<"admin@localhost/Resource">>, <<"user1@localhost">>,
+				<<"<message><ext attr='value'/></message>">>,<<"get/set">>,<<"lastActivity">>],
+			args_desc = ["Sender JID", "Destination JID", "Stanza"],
+			result = {res, rescode}},
+	 		
      #ejabberd_commands{name = send_stanza, tags = [stanza],
 			desc = "Send a stanza; provide From JID and valid To JID",
 			module = ?MODULE, function = send_stanza,
@@ -732,6 +752,13 @@ get_commands_spec() ->
 			args_example = [<<"admin@localhost">>, <<"user1@localhost">>,
 				<<"<message><ext attr='value'/></message>">>],
 			args_desc = ["Sender JID", "Destination JID", "Stanza"],
+			result = {res, rescode}},
+	  #ejabberd_commands{name = send_stanza_delete_offline, tags = [stanza],
+			desc = "Send a stanza; provide From JID and valid To JID",
+			module = ?MODULE, function = send_stanza_delete_offline,
+			args = [{from, binary}, {to, binary}, {	msgid , binary}, {serverid , binary}, {retrieved , binary}],
+			args_example = [<<"admin@localhost">>, <<"user1@localhost">>, <<"1510145096_923301234567">>, <<"1510145096_923301234567,1510145096_923301234567,1510145096_923301234567">>],
+			args_desc = ["Sender JID", "Destination JID", "MSG ID"],
 			result = {res, rescode}},
      #ejabberd_commands{name = privacy_set, tags = [stanza],
 			desc = "Send a IQ set privacy stanza for a local account",
@@ -1565,6 +1592,70 @@ send_stanza(FromString, ToString, Stanza) ->
 	    {error, "JID malformed"}
     end.
 
+
+send_iq(FromString, ToString, IQ, Type, ID) ->
+    From = jid:decode(FromString),
+	To = jid:decode(ToString),
+	{_, _, LResource} = jid:tolower(From),
+	if LResource =/= <<"">> ->
+		if IQ =/= <<"">> ->
+			#xmlel{} = El = fxml_stream:parse_element(IQ),	
+			ejabberd_sm:route(#iq{type = misc:binary_to_atom(Type), id = ID, sub_els = [El],from = From, to = To , lang = <<"en">>});
+		true->
+			ejabberd_sm:route(#iq{type = misc:binary_to_atom(Type), id = ID,from = From, to = To , lang = <<"en">>})
+		end;
+	true->
+		{error, "Missing Resource"}
+	end.	
+	
+send_stanza_delete_offline(FromString, ToString,  MsgID, ServerID, Retrieved) ->
+
+	%%{BigIntTimestamp,[]} = string:to_integer(binary_to_list(ServerID)),
+	BigIntTimestamp = list_to_integer(binary_to_list(ServerID)),
+	
+	From = jid:decode(FromString),
+	UserID  = From#jid.luser,
+	To = jid:decode(ToString),
+	
+	MsgSend = <<"1">>,	
+	MsgIDList = re:split(binary_to_list(MsgID), "_", [{return, list}]),
+	MsgTimeStamp = lists:nth(2, MsgIDList),	
+	TSinteger = trunc(p1_time_compat:system_time(micro_seconds)) div 1000 ,
+	CustomMsgID = binary_to_list(UserID)++"_"++integer_to_list(TSinteger),
+	if Retrieved =/= <<"0">> ->		
+		Stanza = list_to_binary("<message xmlns='jabber:client' lang='en' type='chat' to='"++binary_to_list(FromString)++"' id='"++CustomMsgID++"'><data id='"++MsgTimeStamp++"' message_type='retrieved'><messageID>"++binary_to_list(Retrieved)++"</messageID></data><markable xmlns='urn:xmpp:chat-markers:0'/><body></body></message>");
+	true->
+		Stanza = list_to_binary("<message type='chat' to='"++binary_to_list(FromString)++"' id='"++CustomMsgID++"'><received xmlns='urn:xmpp:chat-markers:0' id='"++binary_to_list(MsgID)++"'></received><data>"++MsgTimeStamp++"</data></message>")
+	end,
+
+	
+	
+    try
+	#xmlel{} = El = fxml_stream:parse_element(Stanza),	
+	Pkt = xmpp:decode(El, ?NS_CLIENT, [ignore_els]),
+	ejabberd_router:route(xmpp:set_from_to(Pkt, From, To))
+    catch _:{xmpp_codec, Why} ->
+	    io:format("incorrect stanza: ~s~n", [xmpp:format_error(Why)]),
+		%%MsgSend = <<"0">>,
+	    {error, Why};
+	  _:{badmatch, {error, Why}} ->
+	    io:format("invalid xml: ~p~n", [Why]),
+		%%MsgSend = <<"0">>,
+	    {error, Why};
+	  _:{bad_jid, S} ->
+	    io:format("malformed JID: ~s~n", [S]),
+		%%MsgSend = <<"0">>,
+	    {error, "JID malformed"}
+    end,
+	%%%===================================================================
+	%%% Delete the offline message here.
+	%%%===================================================================
+	%%if MsgSend == <<"1">> ->			
+	%%	ok = erlcass:execute(?DEL_OFFLINE_API, ?BIND_BY_NAME, [{<<"userid">>, UserID},{<<"createddate">>, BigIntTimestamp}])
+	%% end,
+	ok = erlcass:execute(?DEL_OFFLINE_API, ?BIND_BY_NAME, [{<<"userid">>, UserID},{<<"createddate">>, BigIntTimestamp}]),
+	MsgSend.
+	
 send_stanza_c2s(Username, Host, Resource, Stanza) ->
     case {fxml_stream:parse_element(Stanza),
           ejabberd_sm:get_session_pid(Username, Host, Resource)}

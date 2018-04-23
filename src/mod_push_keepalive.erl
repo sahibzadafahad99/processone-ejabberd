@@ -130,24 +130,18 @@ unregister_hooks(Host) ->
 %%--------------------------------------------------------------------
 -spec c2s_stanza(c2s_state(), xmpp_element() | xmlel(), term()) -> c2s_state().
 c2s_stanza(#{push_enabled := true, mgmt_state := pending} = State,
-	   Pkt, _SendResult) ->
-    case mod_push:is_message_with_body(Pkt) of
-	true ->
-	    maybe_restore_resume_timeout(State);
-	false ->
-	    State
-    end;
+	   _Pkt, _SendResult) ->
+    maybe_restore_resume_timeout(State);
 c2s_stanza(State, _Pkt, _SendResult) ->
     State.
 
 -spec c2s_session_pending(c2s_state()) -> c2s_state().
 c2s_session_pending(#{push_enabled := true, mgmt_queue := Queue} = State) ->
-    case mod_stream_mgmt:queue_find(fun mod_push:is_message_with_body/1,
-				    Queue) of
-	none ->
+    case p1_queue:len(Queue) of
+	0 ->
 	    State1 = maybe_adjust_resume_timeout(State),
 	    maybe_start_wakeup_timer(State1);
-	_Msg ->
+	_ ->
 	    State
     end;
 c2s_session_pending(State) ->
@@ -190,7 +184,7 @@ c2s_handle_cast(State, _Msg) ->
 c2s_handle_info(#{push_enabled := true, mgmt_state := pending,
 		  jid := JID} = State, {timeout, _, push_keepalive}) ->
     ?INFO_MSG("Waking ~s before session times out", [jid:encode(JID)]),
-    mod_push:notify(State, none),
+    mod_push:notify(State),
     {stop, State};
 c2s_handle_info(State, _) ->
     State.
@@ -235,7 +229,7 @@ wake_all(LServer) ->
 	    IgnoreResponse = fun(_) -> ok end,
 	    lists:foreach(fun({_, PushLJID, Node, XData}) ->
 				  mod_push:notify(LServer, PushLJID, Node,
-						  XData, none, IgnoreResponse)
+						  XData, IgnoreResponse)
 			  end, Sessions);
 	error ->
 	    error

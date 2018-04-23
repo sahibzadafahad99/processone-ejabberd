@@ -132,22 +132,29 @@ process_sm_iq(#iq{type = set, lang = Lang} = IQ) ->
 process_sm_iq(#iq{from = From, to = To, lang = Lang} = IQ) ->
     User = To#jid.luser,
     Server = To#jid.lserver,
-    {Subscription, _Ask, _Groups} =
+    {_Subscription, _Ask, _Groups} =
 	ejabberd_hooks:run_fold(roster_get_jid_info, Server,
 				{none, none, []}, [User, Server, From]),
-    if (Subscription == both) or (Subscription == from) or
-       (From#jid.luser == To#jid.luser) and
-       (From#jid.lserver == To#jid.lserver) ->
+	
+	%%%
+	%%%  As We don't need any presence subscribed from any body so we remvoe 
+	%%%  that particular code just leave only the privacy_check 
+	%%%  As its depends on the roster entry. 
+	%%%  Because we have to add each member in every in the roster
+	%%%			
+    %%if (Subscription == both) or (Subscription == from) or
+    %%   (From#jid.luser == To#jid.luser) and
+    %%   (From#jid.lserver == To#jid.lserver) ->
 	    Pres = xmpp:set_from_to(#presence{}, To, From),
 	    case ejabberd_hooks:run_fold(privacy_check_packet,
 					 Server, allow,
 					 [To, Pres, out]) of
 		allow -> get_last_iq(IQ, User, Server);
 		deny -> xmpp:make_error(IQ, xmpp:err_forbidden())
-	    end;
-       true ->
-	    Txt = <<"Not subscribed">>,
-	    xmpp:make_error(IQ, xmpp:err_subscription_required(Txt, Lang))
+	   %% end;
+       %%true ->
+	    %%Txt = <<"Not subscribed">>,
+	    %%xmpp:make_error(IQ, xmpp:err_subscription_required(Txt, Lang))
     end.
 
 privacy_check_packet(allow, C2SState,

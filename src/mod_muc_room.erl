@@ -290,7 +290,7 @@ normal_state({route, <<"">>,
 			       process_iq_admin(From, IQ, StateData);
 			   ?NS_MUC_OWNER ->
 			       process_iq_owner(From, IQ, StateData);
-			   ?NS_DISCO_INFO ->
+			   ?NS_DISCO_INFO when SubEl#disco_info.node == <<>> ->
 			       process_iq_disco_info(From, IQ, StateData);
 			   ?NS_DISCO_ITEMS ->
 			       process_iq_disco_items(From, IQ, StateData);
@@ -2068,29 +2068,11 @@ presence_broadcast_allowed(JID, StateData) ->
 -spec send_initial_presences_and_messages(
 	jid(), binary(), presence(), state(), state()) -> ok.
 send_initial_presences_and_messages(From, Nick, Presence, NewState, OldState) ->
-    send_self_presence(From, NewState),
     send_existing_presences(From, NewState),
     send_initial_presence(From, NewState, OldState),
     History = get_history(Nick, Presence, NewState),
     send_history(From, History, NewState),
     send_subject(From, OldState).
-
--spec send_self_presence(jid(), state()) -> ok.
-send_self_presence(JID, State) ->
-    AvatarHash = (State#state.config)#config.vcard_xupdate,
-    DiscoInfo = make_disco_info(JID, State),
-    DiscoHash = mod_caps:compute_disco_hash(DiscoInfo, sha),
-    Els1 = [#caps{hash = <<"sha-1">>,
-		  node = ?EJABBERD_URI,
-		  version = DiscoHash}],
-    Els2 = if is_binary(AvatarHash) ->
-		   [#vcard_xupdate{hash = AvatarHash}|Els1];
-	      true ->
-		   Els1
-	   end,
-    ejabberd_router:route(#presence{from = State#state.jid, to = JID,
-				    id = randoms:get_string(),
-				    sub_els = Els2}).
 
 -spec send_initial_presence(jid(), state(), state()) -> ok.
 send_initial_presence(NJID, StateData, OldStateData) ->
@@ -2746,26 +2728,31 @@ find_changed_items(UJID, UAffiliation, URole,
 				     true ->
 					  {role, Role}
 				  end,
-    TAffiliation = get_affiliation(JID, StateData),
-    TRole = get_role(JID, StateData),
-    ServiceAf = get_service_affiliation(JID, StateData),
-    CanChangeRA = case can_change_ra(UAffiliation,
-				     URole,
-				     TAffiliation,
-				     TRole, RoleOrAff, RoleOrAffValue,
-				     ServiceAf) of
-		      nothing -> nothing;
-		      true -> true;
-		      check_owner ->
-			  case search_affiliation(owner, StateData) of
-			      [{OJID, _}] ->
-				  jid:remove_resource(OJID)
-				      /=
-				      jid:tolower(jid:remove_resource(UJID));
-			      _ -> true
-			  end;
-		      _ -> false
-		  end,
+    %%TAffiliation = get_affiliation(JID, StateData),
+    %%TRole = get_role(JID, StateData),
+    %%ServiceAf = get_service_affiliation(JID, StateData),
+	%% In app, we invite users and then they join and were unable to set affiliation 
+	%% as well as app was unable to make any other user owner and owner a member. Therefore
+	%% we removed a condition to checked whether affilation change is authorized or not and
+	%% we let everyone change affilation and checks will be on app side.
+    %%CanChangeRA = case can_change_ra(UAffiliation,
+	%%			     URole,
+	%%			     TAffiliation,
+	%%			     TRole, RoleOrAff, RoleOrAffValue,
+	%%			     ServiceAf) of
+	%%	      nothing -> nothing;
+	%%	      true -> true;
+	%%	      check_owner ->
+	%%		  case search_affiliation(owner, StateData) of
+	%%		      [{OJID, _}] ->
+	%%			  jid:remove_resource(OJID)
+	%%			      /=
+	%%			      jid:tolower(jid:remove_resource(UJID));
+	%%		      _ -> true
+	%%		  end;
+	%%	      _ -> false
+	%%	  end,	
+	CanChangeRA = true,
     case CanChangeRA of
 	nothing ->
 	    find_changed_items(UJID, UAffiliation, URole,
@@ -2788,134 +2775,137 @@ find_changed_items(UJID, UAffiliation, URole,
 	    Txt = <<"Changing role/affiliation is not allowed">>,
 	    throw({error, xmpp:err_not_allowed(Txt, Lang)})
     end.
+%%%===================================================================
+%% We don't need this function any more 
 
--spec can_change_ra(affiliation(), role(), affiliation(), role(),
-		    affiliation, affiliation(), affiliation()) -> boolean() | nothing | check_owner;
-		   (affiliation(), role(), affiliation(), role(),
-		    role, role(), affiliation()) -> boolean() | nothing | check_owner.
-can_change_ra(_FAffiliation, _FRole, owner, _TRole,
-	      affiliation, owner, owner) ->
-    %% A room owner tries to add as persistent owner a
-    %% participant that is already owner because he is MUC admin
-    true;
-can_change_ra(_FAffiliation, _FRole, _TAffiliation,
-	      _TRole, _RoleorAffiliation, _Value, owner) ->
-    %% Nobody can decrease MUC admin's role/affiliation
-    false;
-can_change_ra(_FAffiliation, _FRole, TAffiliation,
-	      _TRole, affiliation, Value, _ServiceAf)
-    when TAffiliation == Value ->
-    nothing;
-can_change_ra(_FAffiliation, _FRole, _TAffiliation,
-	      TRole, role, Value, _ServiceAf)
-    when TRole == Value ->
-    nothing;
-can_change_ra(FAffiliation, _FRole, outcast, _TRole,
-	      affiliation, none, _ServiceAf)
-    when (FAffiliation == owner) or
-	   (FAffiliation == admin) ->
-    true;
-can_change_ra(FAffiliation, _FRole, outcast, _TRole,
-	      affiliation, member, _ServiceAf)
-    when (FAffiliation == owner) or
-	   (FAffiliation == admin) ->
-    true;
-can_change_ra(owner, _FRole, outcast, _TRole,
-	      affiliation, admin, _ServiceAf) ->
-    true;
-can_change_ra(owner, _FRole, outcast, _TRole,
-	      affiliation, owner, _ServiceAf) ->
-    true;
-can_change_ra(FAffiliation, _FRole, none, _TRole,
-	      affiliation, outcast, _ServiceAf)
-    when (FAffiliation == owner) or
-	   (FAffiliation == admin) ->
-    true;
-can_change_ra(FAffiliation, _FRole, none, _TRole,
-	      affiliation, member, _ServiceAf)
-    when (FAffiliation == owner) or
-	   (FAffiliation == admin) ->
-    true;
-can_change_ra(owner, _FRole, none, _TRole, affiliation,
-	      admin, _ServiceAf) ->
-    true;
-can_change_ra(owner, _FRole, none, _TRole, affiliation,
-	      owner, _ServiceAf) ->
-    true;
-can_change_ra(FAffiliation, _FRole, member, _TRole,
-	      affiliation, outcast, _ServiceAf)
-    when (FAffiliation == owner) or
-	   (FAffiliation == admin) ->
-    true;
-can_change_ra(FAffiliation, _FRole, member, _TRole,
-	      affiliation, none, _ServiceAf)
-    when (FAffiliation == owner) or
-	   (FAffiliation == admin) ->
-    true;
-can_change_ra(owner, _FRole, member, _TRole,
-	      affiliation, admin, _ServiceAf) ->
-    true;
-can_change_ra(owner, _FRole, member, _TRole,
-	      affiliation, owner, _ServiceAf) ->
-    true;
-can_change_ra(owner, _FRole, admin, _TRole, affiliation,
-	      _Affiliation, _ServiceAf) ->
-    true;
-can_change_ra(owner, _FRole, owner, _TRole, affiliation,
-	      _Affiliation, _ServiceAf) ->
-    check_owner;
-can_change_ra(_FAffiliation, _FRole, _TAffiliation,
-	      _TRole, affiliation, _Value, _ServiceAf) ->
-    false;
-can_change_ra(_FAffiliation, moderator, _TAffiliation,
-	      visitor, role, none, _ServiceAf) ->
-    true;
-can_change_ra(_FAffiliation, moderator, _TAffiliation,
-	      visitor, role, participant, _ServiceAf) ->
-    true;
-can_change_ra(FAffiliation, _FRole, _TAffiliation,
-	      visitor, role, moderator, _ServiceAf)
-    when (FAffiliation == owner) or
-	   (FAffiliation == admin) ->
-    true;
-can_change_ra(_FAffiliation, moderator, _TAffiliation,
-	      participant, role, none, _ServiceAf) ->
-    true;
-can_change_ra(_FAffiliation, moderator, _TAffiliation,
-	      participant, role, visitor, _ServiceAf) ->
-    true;
-can_change_ra(FAffiliation, _FRole, _TAffiliation,
-	      participant, role, moderator, _ServiceAf)
-    when (FAffiliation == owner) or
-	   (FAffiliation == admin) ->
-    true;
-can_change_ra(_FAffiliation, _FRole, owner, moderator,
-	      role, visitor, _ServiceAf) ->
-    false;
-can_change_ra(owner, _FRole, _TAffiliation, moderator,
-	      role, visitor, _ServiceAf) ->
-    true;
-can_change_ra(_FAffiliation, _FRole, admin, moderator,
-	      role, visitor, _ServiceAf) ->
-    false;
-can_change_ra(admin, _FRole, _TAffiliation, moderator,
-	      role, visitor, _ServiceAf) ->
-    true;
-can_change_ra(_FAffiliation, _FRole, owner, moderator,
-	      role, participant, _ServiceAf) ->
-    false;
-can_change_ra(owner, _FRole, _TAffiliation, moderator,
-	      role, participant, _ServiceAf) ->
-    true;
-can_change_ra(_FAffiliation, _FRole, admin, moderator,
-	      role, participant, _ServiceAf) ->
-    false;
-can_change_ra(admin, _FRole, _TAffiliation, moderator,
-	      role, participant, _ServiceAf) ->
-    true;
-can_change_ra(_FAffiliation, _FRole, _TAffiliation,
-	      _TRole, role, _Value, _ServiceAf) ->
-    false.
+%%-spec can_change_ra(affiliation(), role(), affiliation(), role(),
+%%		    affiliation, affiliation(), affiliation()) -> boolean() | nothing | check_owner;
+%%		   (affiliation(), role(), affiliation(), role(),
+%%		    role, role(), affiliation()) -> boolean() | nothing | check_owner.
+%%can_change_ra(_FAffiliation, _FRole, owner, _TRole,
+%%	      affiliation, owner, owner) ->
+%%    %% A room owner tries to add as persistent owner a
+%%    %% participant that is already owner because he is MUC admin
+%%    true;
+%%can_change_ra(_FAffiliation, _FRole, _TAffiliation,
+%%	      _TRole, _RoleorAffiliation, _Value, owner) ->
+%%    %% Nobody can decrease MUC admin's role/affiliation
+%%    false;
+%%can_change_ra(_FAffiliation, _FRole, TAffiliation,
+%%	      _TRole, affiliation, Value, _ServiceAf)
+%%    when TAffiliation == Value ->
+%%    nothing;
+%%can_change_ra(_FAffiliation, _FRole, _TAffiliation,
+%%	      TRole, role, Value, _ServiceAf)
+%%    when TRole == Value ->
+%%    nothing;
+%%can_change_ra(FAffiliation, _FRole, outcast, _TRole,
+%%	      affiliation, none, _ServiceAf)
+%%    when (FAffiliation == owner) or
+%%	   (FAffiliation == admin) ->
+%%    true;
+%%can_change_ra(FAffiliation, _FRole, outcast, _TRole,
+%%	      affiliation, member, _ServiceAf)
+%%    when (FAffiliation == owner) or
+%%	   (FAffiliation == admin) ->
+%%    true;
+%%can_change_ra(owner, _FRole, outcast, _TRole,
+%%	      affiliation, admin, _ServiceAf) ->
+%%    true;
+%%can_change_ra(owner, _FRole, outcast, _TRole,
+%%	      affiliation, owner, _ServiceAf) ->
+%%    true;
+%%can_change_ra(FAffiliation, _FRole, none, _TRole,
+%%	      affiliation, outcast, _ServiceAf)
+%%    when (FAffiliation == owner) or
+%%	   (FAffiliation == admin) ->
+%%    true;
+%%can_change_ra(FAffiliation, _FRole, none, _TRole,
+%%	      affiliation, member, _ServiceAf)
+%%    when (FAffiliation == owner) or
+%%	   (FAffiliation == admin) ->
+%%    true;
+%%can_change_ra(owner, _FRole, none, _TRole, affiliation,
+%%	      admin, _ServiceAf) ->
+%%    true;
+%%can_change_ra(owner, _FRole, none, _TRole, affiliation,
+%%	      owner, _ServiceAf) ->
+%%    true;
+%%can_change_ra(FAffiliation, _FRole, member, _TRole,
+%%	      affiliation, outcast, _ServiceAf)
+%%    when (FAffiliation == owner) or
+%%	   (FAffiliation == admin) ->
+%%    true;
+%%can_change_ra(FAffiliation, _FRole, member, _TRole,
+%%	      affiliation, none, _ServiceAf)
+%%    when (FAffiliation == owner) or
+%%	   (FAffiliation == admin) ->
+%%    true;
+%%can_change_ra(owner, _FRole, member, _TRole,
+%%	      affiliation, admin, _ServiceAf) ->
+%%    true;
+%%can_change_ra(owner, _FRole, member, _TRole,
+%%	      affiliation, owner, _ServiceAf) ->
+%%    true;
+%%can_change_ra(owner, _FRole, admin, _TRole, affiliation,
+%%	      _Affiliation, _ServiceAf) ->
+%%    true;
+%%can_change_ra(owner, _FRole, owner, _TRole, affiliation,
+%%	      _Affiliation, _ServiceAf) ->
+%%    check_owner;
+%%can_change_ra(_FAffiliation, _FRole, _TAffiliation,
+%%	      _TRole, affiliation, _Value, _ServiceAf) ->
+%%    false;
+%%can_change_ra(_FAffiliation, moderator, _TAffiliation,
+%%	      visitor, role, none, _ServiceAf) ->
+%%    true;
+%%can_change_ra(_FAffiliation, moderator, _TAffiliation,
+%%	      visitor, role, participant, _ServiceAf) ->
+%%    true;
+%%can_change_ra(FAffiliation, _FRole, _TAffiliation,
+%%	      visitor, role, moderator, _ServiceAf)
+%%    when (FAffiliation == owner) or
+%%	   (FAffiliation == admin) ->
+%%    true;
+%%can_change_ra(_FAffiliation, moderator, _TAffiliation,
+%%	      participant, role, none, _ServiceAf) ->
+%%    true;
+%%can_change_ra(_FAffiliation, moderator, _TAffiliation,
+%%	      participant, role, visitor, _ServiceAf) ->
+%%   true;
+%%can_change_ra(FAffiliation, _FRole, _TAffiliation,
+%%	      participant, role, moderator, _ServiceAf)
+%%    when (FAffiliation == owner) or
+%%	   (FAffiliation == admin) ->
+%%    true;
+%%can_change_ra(_FAffiliation, _FRole, owner, moderator,
+%%	      role, visitor, _ServiceAf) ->
+%%    false;
+%%can_change_ra(owner, _FRole, _TAffiliation, moderator,
+%%	      role, visitor, _ServiceAf) ->
+%%   true;
+%%can_change_ra(_FAffiliation, _FRole, admin, moderator,
+%%	      role, visitor, _ServiceAf) ->
+%%    false;
+%%can_change_ra(admin, _FRole, _TAffiliation, moderator,
+%%	      role, visitor, _ServiceAf) ->
+%%    true;
+%%can_change_ra(_FAffiliation, _FRole, owner, moderator,
+%%	      role, participant, _ServiceAf) ->
+%%    false;
+%%can_change_ra(owner, _FRole, _TAffiliation, moderator,
+%%	      role, participant, _ServiceAf) ->
+%%    true;
+%%can_change_ra(_FAffiliation, _FRole, admin, moderator,
+%%	      role, participant, _ServiceAf) ->
+%%    false;
+%%can_change_ra(admin, _FRole, _TAffiliation, moderator,
+%%	      role, participant, _ServiceAf) ->
+%%    true;
+%%can_change_ra(_FAffiliation, _FRole, _TAffiliation,
+%%	      _TRole, role, _Value, _ServiceAf) ->
+%%    false.
+%%%===================================================================
 
 -spec send_kickban_presence(undefined | jid(), jid(), binary(),
 			    pos_integer(), state()) -> ok.
@@ -3042,8 +3032,12 @@ process_iq_owner(From, #iq{type = set, lang = Lang,
 						 config = Config,
 						 items = Items}]},
 		 StateData) ->
-    FAffiliation = get_affiliation(From, StateData),
-    if FAffiliation /= owner ->
+    %%FAffiliation = get_affiliation(From, StateData),
+	%% In app, we unable to get any configuration or affilation data other than owner.
+	%% So we removed a condition to checked whether its authorized or not and
+	%% we let everyone fetch affilation / configuration on app side. 
+    %% if FAffiliation /= owner ->
+    if false ->
 	    ErrText = <<"Owner privileges required">>,
 	    {error, xmpp:err_forbidden(ErrText, Lang)};
        Destroy /= undefined, Config == undefined, Items == [] ->
@@ -3086,8 +3080,12 @@ process_iq_owner(From, #iq{type = get, lang = Lang,
 						 config = Config,
 						 items = Items}]},
 		 StateData) ->
-    FAffiliation = get_affiliation(From, StateData),
-    if FAffiliation /= owner ->
+    %FAffiliation = get_affiliation(From, StateData),
+	%% In app, we unable to get any configuration or affilation data other than owner.
+	%% So we removed a condition to checked whether its authorized or not and
+	%% we let everyone fetch affilation / configuration on app side. 
+	%if FAffiliation /= owner ->
+    if false ->
 	    ErrText = <<"Owner privileges required">>,
 	    {error, xmpp:err_forbidden(ErrText, Lang)};
        Destroy == undefined, Config == undefined ->
@@ -3362,15 +3360,12 @@ send_config_change_info(New, #state{config = Old} = StateData) ->
 	      end
 		++
 		case Old#config{anonymous = New#config.anonymous,
+				vcard = New#config.vcard,
 				logging = New#config.logging} of
 		  New -> [];
 		  _ -> [104]
 		end,
     if Codes /= [] ->
-	    lists:foreach(
-	      fun({_LJID, #user{jid = JID}}) ->
-		      send_self_presence(JID, StateData#state{config = New})
-	      end, ?DICT:to_list(StateData#state.users)),
 	    Message = #message{type = groupchat,
 			       id = randoms:get_string(),
 			       sub_els = [#muc_user{status_codes = Codes}]},
@@ -3398,8 +3393,7 @@ remove_nonmembers(StateData) ->
 		StateData, (?DICT):to_list(get_users_and_subscribers(StateData))).
 
 -spec set_opts([{atom(), any()}], state()) -> state().
-set_opts([], StateData) ->
-    set_vcard_xupdate(StateData);
+set_opts([], StateData) -> StateData;
 set_opts([{Opt, Val} | Opts], StateData) ->
     NSD = case Opt of
 	    title ->
@@ -3514,10 +3508,6 @@ set_opts([{Opt, Val} | Opts], StateData) ->
 		StateData#state{config =
 				    (StateData#state.config)#config{vcard =
 									Val}};
-	    vcard_xupdate ->
-		StateData#state{config =
-				    (StateData#state.config)#config{vcard_xupdate =
-									Val}};
 	    pubsub ->
 		StateData#state{config =
 				    (StateData#state.config)#config{pubsub = Val}};
@@ -3551,20 +3541,6 @@ set_opts([{Opt, Val} | Opts], StateData) ->
 	    _ -> StateData
 	  end,
     set_opts(Opts, NSD).
-
-set_vcard_xupdate(#state{config =
-			     #config{vcard = VCardRaw,
-				     vcard_xupdate = undefined} = Config} = State)
-  when VCardRaw /= <<"">> ->
-    case fxml_stream:parse_element(VCardRaw) of
-	{error, _} ->
-	    State;
-	El ->
-	    Hash = mod_vcard_xupdate:compute_hash(El),
-	    State#state{config = Config#config{vcard_xupdate = Hash}}
-    end;
-set_vcard_xupdate(State) ->
-    State.
 
 -define(MAKE_CONFIG_OPT(Opt),
 	{get_config_opt_name(Opt), element(Opt, Config)}).
@@ -3601,7 +3577,6 @@ make_opts(StateData) ->
      ?MAKE_CONFIG_OPT(#config.presence_broadcast),
      ?MAKE_CONFIG_OPT(#config.voice_request_min_interval),
      ?MAKE_CONFIG_OPT(#config.vcard),
-     ?MAKE_CONFIG_OPT(#config.vcard_xupdate),
      ?MAKE_CONFIG_OPT(#config.pubsub),
      {captcha_whitelist,
       (?SETS):to_list((StateData#state.config)#config.captcha_whitelist)},
@@ -3674,8 +3649,12 @@ destroy_room(DEl, StateData) ->
 	  false -> Fiffalse
 	end).
 
--spec make_disco_info(jid(), state()) -> disco_info().
-make_disco_info(_From, StateData) ->
+-spec process_iq_disco_info(jid(), iq(), state()) ->
+				   {result, disco_info()} | {error, stanza_error()}.
+process_iq_disco_info(_From, #iq{type = set, lang = Lang}, _StateData) ->
+    Txt = <<"Value 'set' of 'type' attribute is not allowed">>,
+    {error, xmpp:err_not_allowed(Txt, Lang)};
+process_iq_disco_info(_From, #iq{type = get, lang = Lang}, StateData) ->
     Config = StateData#state.config,
     Feats = [?NS_VCARD, ?NS_MUC,
 	     ?CONFIG_OPT_TO_FEATURE((Config#config.public),
@@ -3701,35 +3680,11 @@ make_disco_info(_From, StateData) ->
 	       _ ->
 		   []
 	   end,
-    #disco_info{identities = [#identity{category = <<"conference">>,
-					type = <<"text">>,
-					name = get_title(StateData)}],
-		features = Feats}.
-
--spec process_iq_disco_info(jid(), iq(), state()) ->
-				   {result, disco_info()} | {error, stanza_error()}.
-process_iq_disco_info(_From, #iq{type = set, lang = Lang}, _StateData) ->
-    Txt = <<"Value 'set' of 'type' attribute is not allowed">>,
-    {error, xmpp:err_not_allowed(Txt, Lang)};
-process_iq_disco_info(From, #iq{type = get, lang = Lang,
-				sub_els = [#disco_info{node = <<>>}]},
-		      StateData) ->
-    DiscoInfo = make_disco_info(From, StateData),
-    Extras = iq_disco_info_extras(Lang, StateData),
-    {result, DiscoInfo#disco_info{xdata = [Extras]}};
-process_iq_disco_info(From, #iq{type = get, lang = Lang,
-				sub_els = [#disco_info{node = Node}]},
-		      StateData) ->
-    try
-	true = mod_caps:is_valid_node(Node),
-	DiscoInfo = make_disco_info(From, StateData),
-	Hash = mod_caps:compute_disco_hash(DiscoInfo, sha),
-	Node = <<(?EJABBERD_URI)/binary, $#, Hash/binary>>,
-	{result, DiscoInfo#disco_info{node = Node}}
-    catch _:{badmatch, _} ->
-	    Txt = <<"Invalid node name">>,
-	    {error, xmpp:err_item_not_found(Txt, Lang)}
-    end.
+    {result, #disco_info{xdata = [iq_disco_info_extras(Lang, StateData)],
+			 identities = [#identity{category = <<"conference">>,
+						 type = <<"text">>,
+						 name = get_title(StateData)}],
+			 features = Feats}}.
 
 -spec iq_disco_info_extras(binary(), state()) -> xdata().
 iq_disco_info_extras(Lang, StateData) ->
@@ -3795,15 +3750,13 @@ process_iq_vcard(_From, #iq{type = get}, StateData) ->
 	{error, _} ->
 	    {error, xmpp:err_item_not_found()}
     end;
-process_iq_vcard(From, #iq{type = set, lang = Lang, sub_els = [Pkt]},
+process_iq_vcard(From, #iq{type = set, lang = Lang, sub_els = [SubEl]},
 		 StateData) ->
     case get_affiliation(From, StateData) of
 	owner ->
-	    SubEl = xmpp:encode(Pkt),
-	    VCardRaw = fxml:element_to_binary(SubEl),
-	    Hash = mod_vcard_xupdate:compute_hash(SubEl),
+	    VCardRaw = fxml:element_to_binary(xmpp:encode(SubEl)),
 	    Config = StateData#state.config,
-	    NewConfig = Config#config{vcard = VCardRaw, vcard_xupdate = Hash},
+	    NewConfig = Config#config{vcard = VCardRaw},
 	    change_config(NewConfig, StateData);
 	_ ->
 	    ErrText = <<"Owner privileges required">>,
@@ -4225,28 +4178,6 @@ send_wrapped(From, To, Packet, Node, State) ->
 		    ok
 	    end;
        true ->
-	    case Packet of
-		#presence{type = unavailable} ->
-		    case xmpp:get_subtag(Packet, #muc_user{}) of
-			#muc_user{destroy = Destroy,
-				  status_codes = Codes} ->
-			    case Destroy /= undefined orelse
-				 (lists:member(110,Codes) andalso
-				  not lists:member(303, Codes)) of
-				true ->
-				    ejabberd_router:route(
-				      #presence{from = State#state.jid, to = To,
-						id = randoms:get_string(),
-						type = unavailable});
-				false ->
-				    ok
-			    end;
-			_ ->
-			    false
-		    end;
-		_ ->
-		    ok
-	    end,
 	    ejabberd_router:route(xmpp:set_from_to(Packet, From, To))
     end.
 

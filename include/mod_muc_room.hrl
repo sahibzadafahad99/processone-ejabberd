@@ -63,7 +63,6 @@
     max_users                            = ?MAX_USERS_DEFAULT :: non_neg_integer() | none,
     logging                              = false :: boolean(),
     vcard                                = <<"">> :: binary(),
-    vcard_xupdate                        = undefined :: undefined | external | binary(),
     captcha_whitelist                    = (?SETS):empty() :: ?TGB_SET,
     mam                                  = false :: boolean(),
     pubsub                               = <<"">> :: binary()

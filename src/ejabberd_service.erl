@@ -191,14 +191,8 @@ handle_authenticated_packet(Pkt0, #{ip := {IP, _}, lang := Lang} = State)
     From = xmpp:get_from(Pkt),
     case check_from(From, State) of
 	true ->
-        {Pkt2, State2} = ejabberd_hooks:run_fold(component_send_packet, {Pkt, State}, []),
-        case Pkt2 of
-            drop ->
-                ok;
-            _ ->
-                ejabberd_router:route(Pkt2)
-		end,
-        State2;
+	    ejabberd_router:route(Pkt),
+	    State;
 	false ->
 	    Txt = <<"Improper domain part of 'from' attribute">>,
 	    Err = xmpp:serr_invalid_from(Txt, Lang),

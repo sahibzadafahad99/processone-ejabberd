@@ -40,7 +40,7 @@
 	 muc_process_iq/2, muc_filter_message/3, message_is_archived/3,
 	 delete_old_messages/2, get_commands_spec/0, msg_to_el/4,
 	 get_room_config/4, set_room_option/3, offline_message/1, export/1,
-	 mod_options/1, remove_mam_for_user_with_peer/3, remove_mam_for_user/2]).
+	 mod_options/1]).
 
 -include("xmpp.hrl").
 -include("logger.hrl").
@@ -69,7 +69,6 @@
     {[{binary(), non_neg_integer(), xmlel()}], boolean(), non_neg_integer()}.
 -callback use_cache(binary()) -> boolean().
 -callback cache_nodes(binary()) -> [node()].
--callback remove_from_archive(binary(), binary(), jid() | none) -> ok | {error, any()}.
 
 -optional_callbacks([use_cache/1, cache_nodes/1]).
 
@@ -259,41 +258,6 @@ remove_room(LServer, Name, Host) ->
     Mod:remove_room(LServer, LName, LHost),
     ok.
 
--spec remove_mam_for_user(binary(), binary()) ->
-    {ok, binary()} | {error, binary()}.
-remove_mam_for_user(User, Server) ->
-    LUser = jid:nodeprep(User),
-    LServer = jid:nameprep(Server),
-    Mod = gen_mod:db_mod(LServer, ?MODULE),
-    case Mod:remove_from_archive(LUser, LServer, none) of
-	ok ->
-	    {ok, <<"MAM archive removed">>};
-	{error, Bin} when is_binary(Bin) ->
-	    {error, Bin};
-	{error, _} ->
-	    {error, <<"Db returned error">>}
-    end.
-
--spec remove_mam_for_user_with_peer(binary(), binary(), binary()) ->
-    {ok, binary()} | {error, binary()}.
-remove_mam_for_user_with_peer(User, Server, Peer) ->
-    LUser = jid:nodeprep(User),
-    LServer = jid:nameprep(Server),
-    try jid:decode(Peer) of
-	Jid ->
-	    Mod = gen_mod:db_mod(LServer, ?MODULE),
-	    case Mod:remove_from_archive(LUser, LServer, Jid) of
-		ok ->
-		    {ok, <<"MAM archive removed">>};
-		{error, Bin} when is_binary(Bin) ->
-		    {error, Bin};
-		{error, _} ->
-		    {error, <<"Db returned error">>}
-	    end
-    catch _:_ ->
-	{error, <<"Invalid peer JID">>}
-    end.
-
 -spec get_room_config([muc_roomconfig:property()], mod_muc_room:state(),
 		      jid(), binary()) -> [muc_roomconfig:property()].
 get_room_config(Fields, RoomState, _From, _Lang) ->
@@ -335,8 +299,25 @@ user_receive_packet(Acc) ->
 -spec user_send_packet({stanza(), c2s_state()})
       -> {stanza(), c2s_state()}.
 user_send_packet({#message{to = Peer} = Pkt, #{jid := JID} = C2SState}) ->
+
+	Peer = xmpp:get_to(Pkt),
     LUser = JID#jid.luser,
-    LServer = JID#jid.lserver,
+    LServer = JID#jid.lserver,	
+	
+	%%%=================================================================
+	%%% Custom Functions. This function is used to parse the media from 
+	%%% the send packet and store in the database
+	%%% Date: 24 Jan 2018
+	%%%===================================================================
+	case archive_media(Pkt, LServer) of 
+		true->
+			MediaPkt1 = init_stanza_id(Pkt, LServer),
+			MediaPkt2 = xmpp:set_from_to(MediaPkt1, JID, Peer),
+			ejabberd_ndb:store_media_data(MediaPkt2);
+		false ->	
+			ok
+	 end,
+	 
     Pkt1 = init_stanza_id(Pkt, LServer),
     Pkt2 = case should_archive(Pkt1, LServer) of
 	       true ->
@@ -1116,26 +1097,7 @@ get_commands_spec() ->
                                      "Days to keep messages"],
 			args_example = [<<"all">>, 31],
 			args = [{type, binary}, {days, integer}],
-			result = {res, rescode}},
-     #ejabberd_commands{name = remove_mam_for_user, tags = [mam],
-			desc = "Remove mam archive for user",
-			module = ?MODULE, function = remove_mam_for_user,
-			args = [{user, binary}, {server, binary}],
-			args_desc = ["Username", "Server"],
-			args_example = [<<"bob">>, <<"example.com">>],
-			result = {res, restuple},
-			result_desc = "Result tuple",
-			result_example = {ok, <<"MAM archive removed">>}},
-     #ejabberd_commands{name = remove_mam_for_user_with_peer, tags = [mam],
-			desc = "Remove mam archive for user with peer",
-			module = ?MODULE, function = remove_mam_for_user_with_peer,
-			args = [{user, binary}, {server, binary}, {with, binary}],
-			args_desc = ["Username", "Server", "Peer"],
-			args_example = [<<"bob">>, <<"example.com">>, <<"anne@example.com">>],
-			result = {res, restuple},
-			result_desc = "Result tuple",
-			result_example = {ok, <<"MAM archive removed">>}}
-	].
+			result = {res, rescode}}].
 
 mod_opt_type(assume_mam_usage) ->
     fun (B) when is_boolean(B) -> B end;
@@ -1163,3 +1125,27 @@ mod_options(Host) ->
      {cache_size, ejabberd_config:cache_size(Host)},
      {cache_missed, ejabberd_config:cache_missed(Host)},
      {cache_life_time, ejabberd_config:cache_life_time(Host)}].
+
+%%%=================================================================
+%%% Custom Functions.
+%%%===================================================================
+-spec archive_media(message(), binary()) -> boolean().
+archive_media(#message{type = error}, _LServer) ->
+    false;
+archive_media(#message{type = groupchat}, _LServer) ->
+    false;
+archive_media(#message{meta = #{from_offline := true}}, _LServer) ->
+    false;
+archive_media(#message{body = Body, subject = Subject,
+			type = Type} = Pkt, LServer) ->
+	XML = fxml:element_to_binary(xmpp:encode(Pkt)),
+	_isMediaChat = string:str(binary_to_list(XML), "<media"),				
+	if(	_isMediaChat >= 1) ->
+		true;
+	true->
+		false
+	end;
+archive_media(_, _LServer) ->
+    false.
+
+	

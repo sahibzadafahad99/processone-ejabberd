@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.53)
-AC_INIT(ejabberd, m4_esyscmd([echo `git describe --tags 2>/dev/null || echo 0.0` | sed 's/-g.*//;s/-/./' | tr -d '\012']), [ejabberd@process-one.net], [ejabberd])
+AC_INIT(ejabberd, 18.03, ejabberd@process-one.net, ejabberd)
 REQUIRE_ERLANG_MIN="6.4 (Erlang/OTP 17.5)"
 REQUIRE_ERLANG_MAX="100.0.0 (No Max)"
 

@@ -47,6 +47,14 @@
 -record(state, {tables = #{} :: map(),
 		schema = [] :: [{atom(), [{atom(), any()}]}]}).
 
+%%%===================================================================
+%%% Currently we did not completely converted every module to new database (Scylla) that's why we could not 
+%%% set as default database. As we don’t set default database than it will not load on the start. 
+%%  To start our module (erlCass) we have to add to include required files here and then start the application.
+%%%===================================================================		
+-include("erlcass.hrl").
+-include("erlcass_ndb.hrl").
+		
 start() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
@@ -70,6 +78,14 @@ init([]) ->
 	    ejabberd:start_app(mnesia, permanent),
 	    ?DEBUG("Waiting for Mnesia tables synchronization...", []),
 	    mnesia:wait_for_tables(mnesia:system_info(local_tables), infinity),
+		
+		%%%===================================================================
+		%% erlCass Module need to start. 
+		%%%===================================================================
+		{ok, _} = application:ensure_all_started(erlcass),
+		generate_prepare_statements(),
+		
+		
 	    Schema = read_schema_file(),
 	    {ok, #state{schema = Schema}};
 	false ->
@@ -470,3 +486,82 @@ dump_schema() ->
 	    io:format("Failed to write Mnesia schema to ~s: ~s",
 		      [File, file:format_error(Reason)])
     end.
+	
+%%%===================================================================
+%%% Custom Functions To prepare erlCas statements
+%%%===================================================================
+
+generate_prepare_statements()->
+	%% To FETCH User Password to authenticate it 
+	ok = erlcass:add_prepare_statement(?AUTH, <<"SELECT privateKey FROM users.auth WHERE  status = 'Active' and userid = ? ">>),
+	
+	%% To Update User Password
+	ok = erlcass:add_prepare_statement(?UPDATE_PASSWORD, <<"UPDATE users.auth SET privateKey =  ? WHERE status = 'Active' and userid = ? ">>),
+	
+	%% To FETCH Previous group based on userID as we don't to create another group with same data
+	%% This is help full for updating the group 
+	ok = erlcass:add_prepare_statement(?FETCH_ROOM, <<"SELECT groupid, createdate FROM chats.groups WHERE  groupid =  ? ">>),
+	
+	%% To Add New Group
+	ok = erlcass:add_prepare_statement(?ADD_ROOM, <<"INSERT INTO chats.groups(groupid, opts, createdate,title,description,affiliations, subscribers) values (?, ?, ?, ?, ?, ?, ?);">>),
+	
+	%% restore_room 
+	ok = erlcass:add_prepare_statement(?RESTORE_ROOM, <<"SELECT groupid, opts,title,description,affiliations, subscribers FROM chats.groups WHERE  groupid =  ? ">>),
+	
+	%% forget or destroy room 
+	ok = erlcass:add_prepare_statement(?FORGET_ROOM, <<"DELETE FROM chats.groups WHERE  groupid = ? ">>),
+	
+	%% get_rooms
+	ok = erlcass:add_prepare_statement(?GET_ROOMS, <<"SELECT groupid, opts,title,description,affiliations, subscribers FROM chats.groups WHERE  groupid = ? ">>),
+	
+	%% Store Messages in the data base
+	ok = erlcass:add_prepare_statement(?ARCHIVE_MSG, <<"INSERT INTO chats.messages(type, senderid, receiverid, message, metadata,createdate) values (?, ?, ?, ?, ?, ?);">>),
+	
+	%% fetch user profile data 
+	ok = erlcass:add_prepare_statement(?GET_VCARD, <<"SELECT userid,type,name,image,status,stickers,seen_receipt,sharedwallpapers,imageupdate,publicinfo,modifydate,storage,version	FROM users.usersprofile WHERE  userid = ? ">>),
+	
+	%% set user profile data 
+	ok = erlcass:add_prepare_statement(?SET_VCARD, <<"INSERT INTO users.usersprofile(userid,type,name,image,status,stickers,seen_receipt,sharedwallpapers,imageupdate,publicinfo,modifydate,storage,version) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);">>),
+	
+	%% fetching user contacts
+	ok = erlcass:add_prepare_statement(?GET_USERCONTACTS, <<"SELECT userid FROM users.usercontacts WHERE  contactid = ? ">>),
+	
+	%% storing offline message for later delivery 
+	ok = erlcass:add_prepare_statement(?STORE_OFFLINE, <<"INSERT INTO chats.offlinemessages (userid, senderid, createddate, messagetext, metadata, type, msgid) VALUES (?, ?, ?, ?, ?, ?, ?) USING TTL 1296000; ">>),
+	
+	%% get offline message for delivery 
+	ok = erlcass:add_prepare_statement(?GET_OFFLINE, <<"SELECT senderid, messagetext, metadata, type, createddate, msgid FROM chats.offlinemessages WHERE  userid = ? ">>),
+	
+	%% delete offline message after delivery 
+	ok = erlcass:add_prepare_statement(?DEL_OFFLINE, <<"DELETE FROM chats.offlinemessages WHERE  userid = ? ">>),
+	
+	%% get privacy settings
+	ok = erlcass:add_prepare_statement(?GET_PRIVACY, <<"SELECT userid, listdata  FROM chats.privacy WHERE  userid = ? ">>),
+	
+	%% set privacy settings
+	ok = erlcass:add_prepare_statement(?SET_PRIVACY, <<"INSERT INTO chats.privacy(userid, name, listdata,  modifydate) values (?, ?, ?, ?);">>),
+	
+	%% get last seen 
+	ok = erlcass:add_prepare_statement(?GET_LAST, <<"SELECT activity, lastactivitytime FROM users.users WHERE  userid = ? ">>),
+	
+	%% store last seen 
+	ok = erlcass:add_prepare_statement(?STORE_LAST, <<"INSERT INTO users.users (userid,activity, lastactivitytime, modifyDate) VALUES (?, ?, ?, ?)">>),
+	
+	%% get users
+	ok = erlcass:add_prepare_statement(?GET_USER, <<"SELECT country, region, deviceType FROM users.users WHERE  userid = ? ">>),
+	
+	%% store media data
+	ok = erlcass:add_prepare_statement(?STORE_MEDIA, <<"INSERT INTO chats.media (userid,fileid, media, type,accessed) VALUES (?, ?, ?, ?, ?)">>),
+	
+	%% delete offline message after delivery using ADMIN API
+	ok = erlcass:add_prepare_statement(?DEL_OFFLINE_API, <<"DELETE FROM chats.offlinemessages WHERE  userid = ? AND createddate  = ? ">>),
+	
+	%% delete user 
+	ok = erlcass:add_prepare_statement(?DEL_AUTH, <<"DELETE FROM users.auth WHERE status='Active' AND  userid = ? ">>),
+	
+	%% INSERT User
+	ok = erlcass:add_prepare_statement(?ADD_AUTH, <<"INSERT INTO users.auth (status,userid, privateKey) VALUES (?, ?, ?)">>),
+	
+	%% delete room 
+	ok = erlcass:add_prepare_statement(?DEL_ROOM, <<"DELETE FROM chats.groups WHERE groupid = ? ">>),
+ok.	
