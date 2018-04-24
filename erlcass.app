@@ -5,7 +5,7 @@
               {applications,[kernel,stdlib,lager]},
               {mod,{erlcass_app,[]}},
               {env,[{cluster_options,[
-					{contact_points, <<"172.17.0.10">>},
+					{contact_points, <<"172.17.0.2">>},
 					{latency_aware_routing, true},
 					{token_aware_routing, true},
 					{number_threads_io, 8},
