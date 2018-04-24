@@ -570,6 +570,7 @@ make_muc_opt(Opts, Title, Description, Affs, Subscribers, GroupID)->
   OptsWithAffs = lists:append(OptsWithDesc,scylla_to_affiliations(Affs)),
   
   SubList = erlang:is_atom(Subscribers),
+  if SubList ->
   %%===================================================================
 		%%% If there is no subcribers so we need to remove these room from the database.
 		%%%===================================================================
