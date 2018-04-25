@@ -2710,7 +2710,7 @@ find_changed_items(UJID, UAffiliation, URole,
 		   [#muc_item{jid = J, nick = Nick, reason = Reason,
 			      role = Role, affiliation = Affiliation}|Items],
 		   Lang, StateData, Res) ->
-    [JID | _] = JIDs =
+    [_ | _] = JIDs =
 	if J /= undefined ->
 		[J];
 	   Nick /= <<"">> ->
