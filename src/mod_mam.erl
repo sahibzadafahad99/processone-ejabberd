@@ -1136,16 +1136,13 @@ archive_media(#message{type = groupchat}, _LServer) ->
     false;
 archive_media(#message{meta = #{from_offline := true}}, _LServer) ->
     false;
-archive_media(#message{body = Body, subject = Subject,
-			type = Type} = Pkt, LServer) ->
+archive_media(Pkt, _LServer) ->
 	XML = fxml:element_to_binary(xmpp:encode(Pkt)),
 	_isMediaChat = string:str(binary_to_list(XML), "<media"),				
 	if(	_isMediaChat >= 1) ->
 		true;
 	true->
 		false
-	end;
-archive_media(_, _LServer) ->
-    false.
+	end.
 
 	
