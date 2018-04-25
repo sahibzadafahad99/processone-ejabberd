@@ -71,4 +71,3 @@ transform_options({ndb_server, {S, P}}, Opts) ->
     [{ndb_server, S}, {ndb_port, P}|Opts];
 transform_options(Opt, Opts) ->
     [Opt|Opts].
-
