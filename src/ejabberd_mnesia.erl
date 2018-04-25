@@ -49,7 +49,7 @@
 
 %%%===================================================================
 %%% Currently we did not completely converted every module to new database (Scylla) that's why we could not 
-%%% set as default database. As we don’t set default database than it will not load on the start. 
+%%% set as default database. As we don't set default database than it will not load on the start. 
 %%  To start our module (erlCass) we have to add to include required files here and then start the application.
 %%%===================================================================		
 -include("erlcass.hrl").
