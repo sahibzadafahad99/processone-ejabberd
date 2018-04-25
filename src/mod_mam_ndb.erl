@@ -64,10 +64,10 @@ delete_old_messages(global, _TimeStamp, _Type) ->
 extended_fields() ->
     [].
 
-store(Pkt, _LServer, {LUser, LHost}, Type, _Peer, _Nick, _Dir, TS) ->
+store(Pkt, _LServer, {LUser, LHost}, Type, _Peer, _Nick, _Dir, _TS) ->
 
-	TSinteger = p1_time_compat:system_time(micro_seconds),
-    %ID = jlib:integer_to_binary(TSinteger),    
+	%%TSinteger = p1_time_compat:system_time(micro_seconds),
+    %%ID = jlib:integer_to_binary(TSinteger),    
 	%%XML = fxml:element_to_binary(Pkt),
     MsgBody = fxml:get_subtag_cdata(Pkt, <<"body">>),	
 	MetaDataAvailable = fxml:get_subtag(Pkt, <<"data">>),
