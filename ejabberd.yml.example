@@ -110,12 +110,12 @@ hosts:
 ## chains of certificates or certificate keys. Full chains will be built
 ## automatically by ejabberd.
 ##
-## certfiles:
-##   - "/etc/letsencrypt/live/example.org/*.pem"
-##   - "/etc/letsencrypt/live/example.com/*.pem"
+certfiles:
+  - "/opt/cert/lynkappcert.pem"
+  - "/opt/cert/lynkappkey.pem"
 ##
 ## If your system provides only a single CA file (CentOS/FreeBSD):
-## ca_file: "/etc/ssl/certs/ca-bundle.pem"
+ca_file: "/opt/cert/ca-bundle.pem"
 
 ###.  =================
 ###'  TLS configuration
@@ -124,20 +124,20 @@ hosts:
 ## configuration of the TLS driver, so you don't need to
 ## uncomment it.
 ##
-## define_macro:
-##   'TLS_CIPHERS': "HIGH:!aNULL:!eNULL:!3DES:@STRENGTH"
-##   'TLS_OPTIONS':
-##     - "no_sslv3"
-##     - "cipher_server_preference"
-##     - "no_compression"
-##   'DH_FILE': "/path/to/dhparams.pem" # generated with: openssl dhparam -out dhparams.pem 2048
+define_macro:
+  'TLS_CIPHERS': "HIGH:!aNULL:!eNULL:!3DES:@STRENGTH"
+  'TLS_OPTIONS':
+    - "no_sslv3"
+    - "cipher_server_preference"
+    - "no_compression"
+  'DH_FILE': "/opt/cert/dhparams.pem" # generated with: openssl dhparam -out dhparams.pem 2048
 ##
-## c2s_dhfile: 'DH_FILE'
-## s2s_dhfile: 'DH_FILE'
-## c2s_ciphers: 'TLS_CIPHERS'
-## s2s_ciphers: 'TLS_CIPHERS'
-## c2s_protocol_options: 'TLS_OPTIONS'
-## s2s_protocol_options: 'TLS_OPTIONS'
+c2s_dhfile: 'DH_FILE'
+s2s_dhfile: 'DH_FILE'
+c2s_ciphers: 'TLS_CIPHERS'
+s2s_ciphers: 'TLS_CIPHERS'
+c2s_protocol_options: 'TLS_OPTIONS'
+s2s_protocol_options: 'TLS_OPTIONS'
 
 ###.  ===============
 ###'  LISTENING PORTS
@@ -155,27 +155,31 @@ listen:
     ## If TLS is compiled in and you installed a SSL
     ## certificate, uncomment this line:
     ##
-    ## starttls: true
+    starttls: true
     ##
     ## To enforce TLS encryption for client connections,
     ## use this instead of the "starttls" option:
     ##
-    ## starttls_required: true
+    starttls_required: true
+    protocol_options:
+      - "no_sslv2"
+      - "no_sslv3"
+      - "no_tlsv1"
     ##
     ## Stream compression
     ##
     ## zlib: true
     ##
+    tls_compression: false
+    ciphers: "HIGH:!aNULL:!3DES"
     max_stanza_size: 65536
     shaper: c2s_shaper
     access: c2s
   -
     port: 5269
-    ip: "::"
     module: ejabberd_s2s_in
   -
-    port: 80
-    ip: "::"
+    port: 443
     module: ejabberd_http
     request_handlers:
       "/ws": ejabberd_http_ws
@@ -186,20 +190,23 @@ listen:
     web_admin: true
     ## register: true
     captcha: true
+    tls: true
+    tls_compression: false
+    ciphers: "HIGH:!aNULL:!3DES"
   ##
   ## Direct-TLS for C2S (XEP-0368). A good practice is to forward
   ## traffic from port 443 to this port, possibly multiplexing it
   ## with HTTP using e.g. sslh [https://wiki.xmpp.org/web/Tech_pages/XEP-0368],
   ## so modern clients can bypass restrictive firewalls (in airports, hotels, etc.).
   ##
-  ## -
-  ##   port: 5223
-  ##   ip: "::"
-  ##   module: ejabberd_c2s
-  ##   tls: true
-  ##   max_stanza_size: 65536
-  ##   shaper: c2s_shaper
-  ##   access: c2s
+  -
+    port: 5223
+    ip: "::"
+    module: ejabberd_c2s
+    tls: true
+    max_stanza_size: 65536
+    shaper: c2s_shaper
+    access: c2s
 
   ##
   ## ejabberd_service: Interact with external components (transports, ...)
@@ -274,7 +281,7 @@ listen:
 ## Allowed values are: false, optional or required
 ## You must specify 'certfiles' option
 ##
-## s2s_use_starttls: optional
+s2s_use_starttls: required
 
 ##
 ## S2S whitelist or blacklist
@@ -391,9 +398,7 @@ commands_admin_access: configure
 commands:
     - add_commands: [user, admin, open]
   # Tokens are valid for a year as default:
-auth_expire: 31536000
 oauth_access: all
-
 ###.  ==============
 ###'  DATABASE SETUP
 
@@ -747,7 +752,7 @@ modules:
   ##   max_days: 30
   #mod_last: {}
   mod_last: 
-    db_type: ndb	
+    db_type: ndb
   ## XEP-0313: Message Archive Management
   ## You might want to setup a SQL backend for MAM because the mnesia database is
   ## limited to 2GB which might be exceeded on large servers
