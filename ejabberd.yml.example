@@ -70,7 +70,7 @@ log_rate_limit: 100
 ## accounts.
 ##
 watchdog_admins:
-   - "923215272763@betaxmpp.lynkapp.net"
+   - "923215272763@142.44.164.201"
 
 ###.  ===============
 ###'  NODE PARAMETERS
@@ -94,7 +94,7 @@ watchdog_admins:
 ##   - "example.org"
 ##
 hosts:
-  - "betaxmpp.lynkapp.net"
+  - "142.44.164.201"
 
 ##
 ## route_subdomains: Delegate subdomains to other XMPP servers.
@@ -494,7 +494,7 @@ acl:
   ##
   admin:
     user:
-      - "920000000@betaxmpp.lynkapp.net"
+      - "920000000@142.44.164.201"
   ## Blocked users
   ##
   ## blocked:
