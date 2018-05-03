@@ -48,7 +48,7 @@
 # Default: not defined
 # Example: 4200-4210
 #
-#FIREWALL_WINDOW=
+FIREWALL_WINDOW=4200-4210
 
 #.
 #' INET_DIST_INTERFACE: IP address where this Erlang node listens other nodes
