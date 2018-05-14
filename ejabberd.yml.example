@@ -70,7 +70,7 @@ log_rate_limit: 100
 ## accounts.
 ##
 watchdog_admins:
-   - "923215272763@54.37.78.134"
+   - "923215272763@145.239.9.33"
 
 ###.  ===============
 ###'  NODE PARAMETERS
@@ -94,7 +94,7 @@ watchdog_admins:
 ##   - "example.org"
 ##
 hosts:
-  - "54.37.78.134"
+  - "145.239.9.33"
 
 ##
 ## route_subdomains: Delegate subdomains to other XMPP servers.
