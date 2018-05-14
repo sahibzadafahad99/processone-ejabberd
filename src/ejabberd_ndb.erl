@@ -64,7 +64,7 @@
 -export([store_last_info/4, get_last/2]).
 
 %%Sending push 
--export([send_push_message/7,send_voice_push_message/8]).
+-export([send_push_message/8,send_voice_push_message/8]).
 
 %%Store Media Data
 -export([store_media_data/1]).
@@ -495,11 +495,11 @@ send_contact_push(SenderID, LServer,Subscribers, Type, Name, Image, Status, Stic
 %%===================================================================
 %%% Sending Push notification
 %%%===================================================================
-send_push_message(SenderID, ReceiverID, MsgBody, Type, MetaData,LServer,TS) ->	
+send_push_message(SenderID, ReceiverID, MsgBody, Type, MetaData,LServer,TS,  MsgID) ->	
 	
 	%% Sending both IOS & Android
 	PushURL = gen_mod:get_module_opt(LServer, mod_offline, push_url),
-	PayLoad = "sender="++binary_to_list(SenderID)++"&subscriber="++binary_to_list(ReceiverID)++"&type="++binary_to_list(Type)++"&msg="++http_uri:encode(binary_to_list(MsgBody))++"&metadata="++http_uri:encode(binary_to_list(MetaData))++"&service=lynk&serverid="++binary_to_list(TS),
+	PayLoad = "sender="++binary_to_list(SenderID)++"&subscriber="++binary_to_list(ReceiverID)++"&type="++binary_to_list(Type)++"&msg="++http_uri:encode(binary_to_list(MsgBody))++"&metadata="++http_uri:encode(binary_to_list(MetaData))++"&service=lynk&serverid="++binary_to_list(TS)++"&msgid="++binary_to_list(MsgID),
 	PayLoadMsg = PayLoad++"/utf8",
 	MsgBytes = byte_size(list_to_binary(PayLoadMsg)),
 	if MsgBytes >= 3800 ->
@@ -571,7 +571,7 @@ make_muc_opt(Opts, Title, Description, Affs, Subscribers, GroupID)->
   
   SubList = erlang:is_atom(Subscribers),
   if SubList ->
-  %%===================================================================
+		%%===================================================================
 		%%% If there is no subcribers so we need to remove these room from the database.
 		%%%===================================================================
 		ok = erlcass:execute(?DEL_ROOM, ?BIND_BY_NAME, [{<<"groupid">>, GroupID}]),		
