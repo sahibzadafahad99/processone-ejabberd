@@ -75,7 +75,7 @@ store_message(#offline_msg{us = {_, LServer}} = M) ->
 				MyType = <<"normal">>,
 				MsgBody = fxml:get_subtag_cdata(EncodePacket, <<"body">>),	
 				MetaData = fxml:element_to_binary(fxml:get_subtag(EncodePacket, <<"x">>)),
-				ejabberd_ndb:send_push_message(SenderID, ReceiverID, MsgBody, MyType, MetaData,LServer,TimeStamp),
+				ejabberd_ndb:send_push_message(SenderID, ReceiverID, MsgBody, MyType, MetaData,LServer,TimeStamp,MsgID),
 				list_to_binary("9200000000_"++integer_to_list(TSinteger));
 			true->
 				_isGroupChat = string:str(binary_to_list(XML), "type='groupchat'"),				
@@ -88,7 +88,7 @@ store_message(#offline_msg{us = {_, LServer}} = M) ->
 					NewSenderID = get_message_from(NewPacket),					
 					if (ValidGroupMessage == <<"message">>) ->						
 						PushMetaData = fxml:element_to_binary(fxml:get_subtag(NewPacket, <<"data">>)),					
-						ejabberd_ndb:send_push_message(NewSenderID, ReceiverID, MsgBody, MyType, PushMetaData,LServer,TimeStamp);
+						ejabberd_ndb:send_push_message(NewSenderID, ReceiverID, MsgBody, MyType, PushMetaData,LServer,TimeStamp,MsgID);
 					true->
 						ok
 					end,
@@ -97,7 +97,7 @@ store_message(#offline_msg{us = {_, LServer}} = M) ->
 					MyType = <<"normal">>,
 					MsgBody = fxml:get_subtag_cdata(EncodePacket, <<"body">>),	
 					MetaData = <<"">>,
-					ejabberd_ndb:send_push_message(SenderID, ReceiverID, MsgBody, MyType, MetaData,LServer,TimeStamp),
+					ejabberd_ndb:send_push_message(SenderID, ReceiverID, MsgBody, MyType, MetaData,LServer,TimeStamp,MsgID),
 					list_to_binary("9200000000_"++integer_to_list(TSinteger))
 				end
 			end,
@@ -113,7 +113,7 @@ store_message(#offline_msg{us = {_, LServer}} = M) ->
 			MsgBodyText = if (MyType == <<"received">>) or (MyType == <<"displayed">>) ->
 							MsgID;
 						true->
-						ejabberd_ndb:send_push_message(SenderID, ReceiverID, MsgBody, MyType, MetaData,LServer, TimeStamp),
+						ejabberd_ndb:send_push_message(SenderID, ReceiverID, MsgBody, MyType, MetaData,LServer, TimeStamp, MsgID),
 						MsgBody
 					end,
 			ejabberd_ndb:store_offline_message(SenderID,ReceiverID, MsgBodyText, MetaData, MyType, MsgID, TS)			
