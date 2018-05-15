@@ -134,7 +134,7 @@ FIREWALL_WINDOW=4200-4210
 #
 # Default: ejabberd@localhost
 #
-ERLANG_NODE=ejabberd1@54.36.120.42
+ERLANG_NODE=ejabberd1@10.0.0.4
 
 #.
 #' EJABBERD_PID_PATH: ejabberd PID file
